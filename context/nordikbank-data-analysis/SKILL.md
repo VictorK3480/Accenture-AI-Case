@@ -19,16 +19,17 @@ Anything you write (cleaned features, lookup tables) goes in a working directory
 
 ## Data layout
 
-| File | Grain | Key |
-|---|---|---|
-| `customers.csv` | one row per customer | `customer_id` |
-| `accounts.csv` | one row per account (multiple per customer) | `account_id`, FK `customer_id` |
-| `baselines.csv` | one row per customer, pre-computed 6-month behavioral features (Jul–Dec 2024) | `customer_id` |
-| `transactions.csv` | one row per transaction | `transaction_id`, FK `customer_id`, `account_id` |
-| `alert_history.csv` | one row per historical TMS alert | `alert_id`, FK `customer_id` |
-| `country_risk.csv` | one row per country | `country_code` |
+| File                | Grain                                                                         | Key                                              |
+| ------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------ |
+| `customers.csv`     | one row per customer                                                          | `customer_id`                                    |
+| `accounts.csv`      | one row per account (multiple per customer)                                   | `account_id`, FK `customer_id`                   |
+| `baselines.csv`     | one row per customer, pre-computed 6-month behavioral features (Jul–Dec 2024) | `customer_id`                                    |
+| `transactions.csv`  | one row per transaction                                                       | `transaction_id`, FK `customer_id`, `account_id` |
+| `alert_history.csv` | one row per historical TMS alert                                              | `alert_id`, FK `customer_id`                     |
+| `country_risk.csv`  | one row per country                                                           | `country_code`                                   |
 
 **Target**: `customers.suspicious_activity_confirmed` — binary, 0 or 1.
+
 - Has values for `train` and `val` rows.
 - **Null for `test` rows** (by design — the panel grades against held-back labels).
 - Evaluation is done on `val`, never on `test`.
@@ -38,6 +39,7 @@ Anything you write (cleaned features, lookup tables) goes in a working directory
 ## Key fields by file
 
 ### customers.csv
+
 - `customer_type` ∈ {`personal`, `corporate`, `sole_trader`, `SME`} — **four** distinct types. `SME` (89 customers) behaves like `corporate` for null-field purposes but is a separate cohort. Never collapse any type into another without documenting it.
 - `kyc_risk_rating` ∈ {`low`, `medium`, `high`}
 - `pep_status`, `sanctions_screening_flag` — boolean
@@ -48,10 +50,12 @@ Anything you write (cleaned features, lookup tables) goes in a working directory
 - `residency_country`, `nationality` — join to `country_risk` for risk enrichment.
 
 ### accounts.csv
+
 - `account_type` ∈ {`current`, `savings`, `business`} — a personal customer holding a business account is worth flagging.
 - `avg_monthly_balance_6m`, `avg_monthly_inflow_6m`, `avg_monthly_outflow_6m` — pre-aggregated balance features; can be used directly or as a baseline for deviation.
 
 ### transactions.csv
+
 - `amount` — can be negative in this dataset (outflows). Clarify whether you're summing signed amounts or absolute values; never mix without noting it.
 - `transaction_type` — categories include standing_order, direct_debit, wire_transfer, cash_deposit, etc. Profile the distribution; cash-type transactions are the core AML signal.
 - `channel` — online_banking, branch, ATM, etc. Branch and ATM cash transactions carry higher risk.
@@ -62,14 +66,17 @@ Anything you write (cleaned features, lookup tables) goes in a working directory
 - `is_recurring` — recurring transactions are generally lower risk; non-recurring large transfers merit more scrutiny.
 
 ### baselines.csv
+
 Pre-computed behavioral features covering **Jul–Dec 2024** — this is the **most recent** (scoring-period) window. `transactions.csv` covers **Jan–Dec 2024** in full. For self-deviation features, the non-overlapping historical window available is **Jan–Jun 2024**: compute features from transactions in that window and compare to baselines. The deviation captures how behavior changed from H1 to H2 2024.
 
 ### alert_history.csv
+
 - `trigger_rule` — which rule fired (threshold, structuring, etc.)
 - `analyst_decision` ∈ {`escalated`, `closed`, `SAR_filed`, ...}
 - `investigation_time_minutes` — can be aggregated per customer as a behavioral feature.
 
 ### country_risk.csv
+
 - `fatf_status` — `compliant` vs. non-compliant (or grey list)
 - `eu_high_risk_list` — boolean
 - `corruption_perception_index` — numeric score; can be used as a continuous feature rather than binned.
@@ -87,6 +94,15 @@ Pre-computed behavioral features covering **Jul–Dec 2024** — this is the **m
 - `transactions.amount` can be negative. Use absolute value or split by direction when computing volume — never sum signed amounts and call it "volume."
 - Don't filter out `status = 'declined'` transactions during EDA. Declined patterns are signal, not noise.
 
+## tsfresh usage
+
+tsfresh is appropriate for extracting **time-series features** from the transaction series — things like amount volatility, trend, periodicity, and acceleration of activity over time. Follow this sequence:
+
+1. Complete EDA first — understand distributions, nulls, currency mix, and customer type breakdowns before feeding data to tsfresh.
+2. Build core manual features first (cash intensity, counterparty network, geographic spread, income consistency) — these require table joins and business logic that tsfresh cannot handle.
+3. Apply tsfresh on top, using `RelevantFeatureAugmenter` to filter down to statistically significant features only. Run it on **approved transactions only**, with currency and customer type documented.
+4. Every tsfresh feature carried into the model must have a compliance narrative — "this captures accelerating transaction volume" not just a feature name. Drop any that cannot be explained.
+
 ## Conventions
 
 - **Library**: pandas by default. Polars is fine if the user prefers it; ask once at the start, then stick with the choice.
@@ -96,6 +112,7 @@ Pre-computed behavioral features covering **Jul–Dec 2024** — this is the **m
 ## Expected outputs
 
 EDA work in this project typically produces one or more of:
+
 - **Feature tables** — customer-level aggregations ready for modeling, saved as `features_v{N}.parquet` (versioned). Coordinate naming and version number with the modeling skill.
 - **Profiling summaries** — null counts, distributions, class-stratified stats. Save these where the user can revisit them; don't just print to stdout.
 - **Lookup/enrichment tables** — e.g. customer + country_risk join, industry risk tiers.
