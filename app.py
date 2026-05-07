@@ -392,6 +392,53 @@ def inject_styles():
         border-radius: 8px;
         border: 1.5px solid #dde3ed;
     }
+    /* Keep the selectbox value (and any button) on a single line. When the
+       trigger text wraps, BaseUI renders it as two stacked bordered rows that
+       look like two separate boxes — clip with ellipsis instead. */
+    .stSelectbox [data-baseweb="select"] > div,
+    .stSelectbox [data-baseweb="select"] > div > div,
+    .stSelectbox [data-baseweb="select"] [class*="ValueContainer"],
+    .stSelectbox [data-baseweb="select"] [class*="SingleValue"] {
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        flex-wrap: nowrap !important;
+    }
+    .stButton > button {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Hyperlink-style button — used for the clickable customer name in the
+       Customer Database. Triggered by an empty .db-link-anchor div rendered
+       immediately before the button (siblings inside the same column). */
+    [data-testid="stElementContainer"]:has(.db-link-anchor) + [data-testid="stElementContainer"] .stButton > button,
+    .element-container:has(.db-link-anchor) + .element-container .stButton > button,
+    div:has(> div > .db-link-anchor) + div .stButton > button {
+        background: transparent !important;
+        border: none !important;
+        color: #1565c0 !important;
+        font-weight: 600 !important;
+        text-align: left !important;
+        justify-content: flex-start !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+        transform: none !important;
+        min-height: 0 !important;
+        height: auto !important;
+        line-height: 1.3 !important;
+    }
+    [data-testid="stElementContainer"]:has(.db-link-anchor) + [data-testid="stElementContainer"] .stButton > button:hover,
+    .element-container:has(.db-link-anchor) + .element-container .stButton > button:hover,
+    div:has(> div > .db-link-anchor) + div .stButton > button:hover {
+        background: transparent !important;
+        color: #0d47a1 !important;
+        text-decoration: underline !important;
+        transform: none !important;
+        box-shadow: none !important;
+    }
 
     /* ── 10. Status summary cards (sidebar) ── */
     .status-card {
@@ -1046,19 +1093,22 @@ def get_history(customer_id=None, finalized_only=False):
 
 # ── Modal: Investigation detail ─────────────────────────────────────────────
 def open_investigation(customer_id):
-    """Set state to open the investigation modal. Auto-transitions a 'new'
-    customer to 'under_review' so the queue reflects the analyst's attention."""
+    """Set state to open the investigation modal in **action mode** (Alert
+    Queue path). Auto-transitions a 'new' customer to 'under_review' so the
+    queue reflects the analyst's attention."""
     rec = get_status(customer_id)
     if rec["status"] == "new":
         transition_status(customer_id, "under_review",
                           analyst_name="", reason="Opened for review")
     st.session_state["modal_customer_id"] = customer_id
     st.session_state["modal_open"] = True
+    st.session_state["modal_readonly"] = False
 
 
 def close_investigation():
     st.session_state["modal_open"] = False
     st.session_state["modal_customer_id"] = None
+    st.session_state["modal_readonly"] = False
 
 
 @st.dialog("Customer investigation", width="large")
@@ -1162,7 +1212,7 @@ def render_investigation_dialog(customer_id):
     industry = cust.get("industry_code", "")
     if occ and not pd.isna(occ):
         pills.append(f'<span class="pill" style="background:#e8f1fb;color:#1565c0;'
-                     f'border:1px solid #1565c020">{occ}</span>')
+                     f'border:1px solid #1565c020">Occupation: {occ}</span>')
     elif industry and not pd.isna(industry):
         pills.append(f'<span class="pill" style="background:#e8f1fb;color:#1565c0;'
                      f'border:1px solid #1565c020">Industry: {industry}</span>')
@@ -1293,13 +1343,9 @@ def render_investigation_dialog(customer_id):
 
                     st.markdown(f"""
                     <div class="driver-row {driver_class}">
-                        <div style="display:flex;justify-content:space-between;
-                                    align-items:center;margin-bottom:4px">
+                        <div style="margin-bottom:4px">
                             <span style="font-weight:600;font-size:0.9rem"
                                   title="{tooltip}">{label}</span>
-                            <span style="font-size:0.78rem;color:#546e8a">
-                                SHAP: {shap_f:+.3f}
-                            </span>
                         </div>
                         <div style="font-size:0.85rem">{timeline}{cohort_line}</div>
                     </div>
@@ -1351,40 +1397,8 @@ def render_investigation_dialog(customer_id):
                         "investigation_time_minutes": "Time (min)"}),
                     use_container_width=True, hide_index=True, height=200)
 
-    # ── Section 4: Transaction patterns & anomalies ──────────────────────────
-    with st.expander("Transaction Patterns & Anomalies"):
-        if cust_txns_full.empty:
-            st.info("No transactions in sample window for this customer.")
-        else:
-            n_total   = len(cust_txns_full)
-            n_offhrs  = ((cust_txns_full["hour"] < 8) |
-                         (cust_txns_full["hour"] >= 18)).sum()
-            n_decline = (cust_txns_full["status"] == "declined").sum()
-            largest   = float(cust_txns_full["abs_amount"].max())
-            n_intl    = (cust_txns_full["counterparty_bank_country"].notna()
-                         & (cust_txns_full["counterparty_bank_country"] != "DK")).sum()
-            n_cash    = cust_txns_full["transaction_type"].isin(
-                ("cash_deposit", "cash_withdrawal")).sum()
 
-            m_cols = st.columns(4)
-            m_cols[0].metric("Transactions", f"{n_total:,}")
-            m_cols[1].metric("Off-hours", f"{n_offhrs:,}",
-                             help="Transactions outside 08:00–18:00")
-            m_cols[2].metric("Declined", f"{n_decline:,}",
-                             help="Repeated declines can indicate structuring")
-            m_cols[3].metric("Largest amount", fmt_dkk(largest))
-
-            m_cols = st.columns(3)
-            m_cols[0].metric("International", f"{n_intl:,}")
-            m_cols[1].metric("Cash", f"{n_cash:,}")
-            cohort_n_intl = (cohort_row.get("pct_international_transactions")
-                             if cohort_row is not None else None)
-            if cohort_n_intl is not None:
-                m_cols[2].metric("Intl rate vs cohort",
-                                 fmt_pct(n_intl / max(n_total, 1)),
-                                 delta=f"cohort avg {fmt_pct(cohort_n_intl)}")
-
-    # ── Section 5: Transaction history with risk flags ───────────────────────
+    # ── Section 5: Transaction history (row tinted by suspicion level) ───────
     with st.expander("Transaction History"):
         if cust_txns_full.empty:
             st.info("No transactions in sample window for this customer.")
@@ -1396,37 +1410,40 @@ def render_investigation_dialog(customer_id):
                 cust_txns_full["transaction_id"].isin(first_seen)
                 & cust_txns_full["counterparty_id"].notna())
 
-            def row_flags(row):
-                chips = []
+            # Per-row suspicion level → background colour.
+            #   "red"   = FATF non-cooperative or EU-sanctions counterparty country
+            #   "amber" = grey-list jurisdiction, new counterparty, or off-hours
+            #   ""      = no concern, leave row uncoloured
+            def row_tint(row):
                 cs, _ = country_risk_status(row.get("counterparty_bank_country"))
                 if cs == "red":
-                    chips.append('<span class="flag-chip flag-red">⛔</span>')
-                elif cs == "amber":
-                    chips.append('<span class="flag-chip flag-amber">⚠️</span>')
-                elif cs == "green":
-                    chips.append('<span class="flag-chip flag-green">✓</span>')
-                if row["is_new_cp"]:
-                    chips.append('<span class="flag-chip flag-amber">⭐ NEW</span>')
-                if row["hour"] < 8 or row["hour"] >= 18:
-                    chips.append('<span class="flag-chip flag-amber">off-hours</span>')
-                return "".join(chips)
+                    return "red"
+                if (cs == "amber" or row["is_new_cp"]
+                        or row["hour"] < 8 or row["hour"] >= 18):
+                    return "amber"
+                return ""
+
+            tint_bg = {"red": "#ffebee", "amber": "#fff8e1", "": "#ffffff"}
 
             cust_txns_sorted = cust_txns_full.sort_values("abs_amount", ascending=False)
+
+            # ── Top 8 by absolute amount, rendered as an HTML table ──────────
             top = cust_txns_sorted.head(8).copy()
             top["Date"]    = top["timestamp"].apply(fmt_ts)
             top["Amount"]  = top["amount"].apply(lambda v: f"{v:,.0f}")
-            top["Flags"]   = top.apply(row_flags, axis=1)
+            top["_tint"]   = top.apply(row_tint, axis=1)
 
             head = ("<table class='queue-table'><thead><tr style="
                     "'font-size:0.7rem;color:#546e8a;text-transform:uppercase'>")
-            for h in ("Date", "Amount", "CCY", "Type", "Channel", "Country", "Flags"):
+            for h in ("Date", "Amount", "CCY", "Type", "Channel", "Country"):
                 head += f"<th style='padding:6px 8px;text-align:left'>{h}</th>"
             head += "</tr></thead><tbody>"
             body = ""
             for _, r in top.iterrows():
-                body += "<tr style='font-size:0.85rem'>"
+                bg = tint_bg.get(r["_tint"], "#ffffff")
+                body += f"<tr style='font-size:0.85rem;background:{bg}'>"
                 for c in ("Date", "Amount", "currency", "transaction_type",
-                          "channel", "counterparty_bank_country", "Flags"):
+                          "channel", "counterparty_bank_country"):
                     val = r.get(c, "")
                     if pd.isna(val):
                         val = "—"
@@ -1434,52 +1451,125 @@ def render_investigation_dialog(customer_id):
                 body += "</tr>"
             st.markdown(head + body + "</tbody></table>", unsafe_allow_html=True)
 
-            # Full transaction list inline (no nested expander)
+            # Tiny legend so the colour code is unambiguous.
+            st.markdown(
+                '<div style="margin-top:8px;font-size:0.75rem;color:#546e8a">'
+                '<span style="display:inline-block;width:12px;height:12px;'
+                'background:#ffebee;border:1px solid #c62828;border-radius:2px;'
+                'vertical-align:middle;margin-right:4px"></span>'
+                'High-risk jurisdiction&nbsp;&nbsp;'
+                '<span style="display:inline-block;width:12px;height:12px;'
+                'background:#fff8e1;border:1px solid #f9a825;border-radius:2px;'
+                'vertical-align:middle;margin-right:4px"></span>'
+                'Elevated (new counterparty / off-hours / grey list)'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+            # ── Full transaction list (st.dataframe with row tinting) ────────
             st.markdown(f"<p style='font-size:0.78rem;color:#546e8a;"
-                        f"margin-top:10px;margin-bottom:4px'>"
+                        f"margin-top:14px;margin-bottom:4px'>"
                         f"All {len(cust_txns_full):,} transactions:</p>",
                         unsafe_allow_html=True)
             full = cust_txns_sorted.copy()
             full["Date"]   = full["timestamp"].apply(fmt_ts)
             full["Amount"] = full["amount"].apply(lambda v: f"{v:,.0f}")
-            st.dataframe(
-                full[["Date", "Amount", "currency", "transaction_type",
-                      "channel", "counterparty_bank_country"]].rename(columns={
-                    "currency": "CCY", "transaction_type": "Type",
-                    "channel": "Channel",
-                    "counterparty_bank_country": "Country"}),
-                use_container_width=True, hide_index=True, height=200)
+            tints = full.apply(row_tint, axis=1)  # Series, indexed like full
+
+            display_cols = ["Date", "Amount", "currency", "transaction_type",
+                            "channel", "counterparty_bank_country"]
+            full_disp = full[display_cols].rename(columns={
+                "currency": "CCY", "transaction_type": "Type",
+                "channel": "Channel",
+                "counterparty_bank_country": "Country"})
+
+            def _style_rows(disp_row):
+                tint = tints.loc[disp_row.name]
+                bg = tint_bg.get(tint, "")
+                return [f"background-color: {bg}" if bg and bg != "#ffffff" else ""
+                        for _ in disp_row.index]
+
+            styled = full_disp.style.apply(_style_rows, axis=1)
+            st.dataframe(styled, use_container_width=True,
+                         hide_index=True, height=200)
 
     # ── Section 6: Investigation history ─────────────────────────────────────
-    with st.expander("Investigation History"):
-        history = get_history(customer_id=customer_id)
-        if history.empty:
-            st.info("No prior investigation activity recorded.")
-        else:
-            for _, h in history.iterrows():
-                badge = status_badge(h["new_status"])
-                analyst_disp = h["analyst_name"] or "(no name)"
-                when_disp = fmt_ts(h["changed_at"])
-                reason_html = (
-                    f'<div style="margin-top:4px;font-size:0.85rem;color:#0d2137">'
-                    f'{h["reason_note"]}</div>'
-                    if h["reason_note"] else ""
-                )
-                st.markdown(
-                    f'<div style="padding:8px 12px;border-radius:8px;'
-                    f'background:#f5f8fc;margin-bottom:6px">'
-                    f'<div style="display:flex;justify-content:space-between;'
-                    f'font-size:0.85rem">'
-                    f'<span><strong>{analyst_disp}</strong> · {when_disp}</span>'
-                    f'{badge}</div>'
-                    f'{reason_html}'
-                    f'</div>',
-                    unsafe_allow_html=True)
+    # In readonly (database) mode this is shown prominently at the bottom of
+    # the modal, so we skip the duplicate expander here.
+    if not st.session_state.get("modal_readonly", False):
+        with st.expander("Investigation History"):
+            history = get_history(customer_id=customer_id)
+            if history.empty:
+                st.info("No prior investigation activity recorded.")
+            else:
+                for _, h in history.iterrows():
+                    badge = status_badge(h["new_status"])
+                    analyst_disp = h["analyst_name"] or "(no name)"
+                    when_disp = fmt_ts(h["changed_at"])
+                    reason_html = (
+                        f'<div style="margin-top:4px;font-size:0.85rem;color:#0d2137">'
+                        f'{h["reason_note"]}</div>'
+                        if h["reason_note"] else ""
+                    )
+                    st.markdown(
+                        f'<div style="padding:8px 12px;border-radius:8px;'
+                        f'background:#f5f8fc;margin-bottom:6px">'
+                        f'<div style="display:flex;justify-content:space-between;'
+                        f'font-size:0.85rem">'
+                        f'<span><strong>{analyst_disp}</strong> · {when_disp}</span>'
+                        f'{badge}</div>'
+                        f'{reason_html}'
+                        f'</div>',
+                        unsafe_allow_html=True)
 
     # ── Action area ──────────────────────────────────────────────────────────
     st.markdown("---")
 
-    # ── Tabs: Decision / Send Email ───────────────────────────────────────────
+    modal_readonly = st.session_state.get("modal_readonly", False)
+
+    # ── Database / view-only mode: show Past Decisions overview ──────────────
+    if modal_readonly:
+        st.markdown('<div class="section-label" style="margin-top:0">'
+                    'Past Decisions</div>', unsafe_allow_html=True)
+        history = get_history(customer_id=customer_id)
+        if history.empty:
+            st.info("No prior investigation activity recorded for this customer.")
+        else:
+            for _, h in history.iterrows():
+                badge        = status_badge(h["new_status"])
+                analyst_disp = h["analyst_name"] or "(no name)"
+                when_disp    = fmt_ts(h["changed_at"])
+                prev         = h["previous_status"] or "—"
+                reason_html  = (
+                    f'<div style="margin-top:6px;font-size:0.88rem;color:#0d2137">'
+                    f'<strong style="color:#546e8a;font-weight:600">Reason: </strong>'
+                    f'{h["reason_note"]}</div>'
+                    if h["reason_note"] else
+                    '<div style="margin-top:6px;font-size:0.82rem;color:#aaa">'
+                    'No reason recorded.</div>'
+                )
+                st.markdown(
+                    f'<div style="padding:10px 14px;border-radius:8px;'
+                    f'background:#f5f8fc;border:1px solid #dde3ed;margin-bottom:8px">'
+                    f'<div style="display:flex;justify-content:space-between;'
+                    f'align-items:center;font-size:0.85rem">'
+                    f'<span><strong style="color:#0d2137">{analyst_disp}</strong>'
+                    f'&nbsp;<span style="color:#546e8a">· {when_disp}</span></span>'
+                    f'{badge}</div>'
+                    f'<div style="font-size:0.78rem;color:#546e8a;margin-top:4px">'
+                    f'Status change: <em>{prev}</em> → <em>{h["new_status"]}</em></div>'
+                    f'{reason_html}'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        if st.button("Close", key="modal_close_view", type="primary",
+                     use_container_width=True):
+            close_investigation()
+            st.rerun()
+        return
+
+    # ── Action mode: Decision / Send Email tabs (Alert Queue path) ───────────
     modal_tab1, modal_tab2 = st.tabs(["Decision", "Send Email"])
 
     with modal_tab2:
@@ -1650,8 +1740,20 @@ def render_queue_tab():
         "Status":      "status",
     }
 
-    # Assign scored_at before sorting
-    queue["scored_at"] = pd.Timestamp.now().strftime("%d/%m/%Y %H:%M")
+    # Assign scored_at before sorting. Each customer gets a deterministic
+    # pseudo-recent timestamp derived from its customer_id, spread across the
+    # past 14 days during business hours, so the queue doesn't look like
+    # everything was just added at the same moment.
+    def _scored_at(cid):
+        h = _hash_id(cid)
+        days_back = h % 14                  # 0–13 days
+        hour      = 8 + (h // 14) % 10      # 08–17
+        minute    = (h // 140) % 60
+        sec       = (h // 8400) % 60
+        return (datetime.now() - timedelta(days=days_back)).replace(
+            hour=hour, minute=minute, second=sec, microsecond=0)
+
+    queue["scored_at"] = queue["customer_id"].map(_scored_at)
     queue = queue.sort_values(sort_col, ascending=sort_asc)
 
     st.markdown("### Alert Queue")
@@ -1663,7 +1765,7 @@ def render_queue_tab():
     )
 
     # ── Clickable column headers ───────────────────────────────────────────────
-    H = [2.8, 1.2, 1.4, 1.4, 0.8]
+    H = [2.8, 1.2, 1.4, 1.6, 0.8]
     h = st.columns(H)
     for i, t in enumerate(("Customer", "Risk", "Date added", "Status", "")):
         if t == "":
@@ -1733,7 +1835,7 @@ def render_queue_tab():
         )
         c[2].markdown(
             f'<div style="padding:6px 0;font-size:0.83rem;color:#546e8a">'
-            f'{row["scored_at"]}</div>',
+            f'{fmt_ts(row["scored_at"])}</div>',
             unsafe_allow_html=True,
         )
         current_idx = status_options.index(status) if status in status_options else 0
@@ -2003,9 +2105,11 @@ def render_database_tab():
     visible = filtered.iloc[db_page * PAGE:(db_page + 1) * PAGE]
 
     # ── Column headers ──────────────────────────────────────────────────────────
-    H = [1.0, 2.6, 1.0, 1.6, 1.2]
+    # Status column widened to 1.5 so "Under Review" never wraps. Compliance
+    # Flags column removed — those signals already show in the modal header.
+    H = [1.5, 3.4, 1.0, 1.1]
     h = st.columns(H)
-    for i, t in enumerate(("Status", "Customer", "Risk", "Compliance Flags", "Type")):
+    for i, t in enumerate(("Status", "Customer", "Risk", "Type")):
         h[i].markdown(
             f'<div style="font-size:0.7rem;font-weight:700;'
             f'letter-spacing:0.06em;color:#546e8a;text-transform:uppercase;'
@@ -2027,57 +2131,52 @@ def render_database_tab():
         ctype  = row.get("customer_type") or "—"
         status = row.get("current_status", "new")
 
-        # Compliance flags — only medium/high KYC, PEP, sanctions
-        flags_html = ""
-        if kyc == "high":
-            flags_html += '<span class="flag-chip flag-red">Rating: High</span>'
-        elif kyc == "medium":
-            flags_html += '<span class="flag-chip flag-amber">Rating: Medium</span>'
-        if pep:
-            flags_html += '<span class="flag-chip flag-red">PEP</span>'
-        if sanc:
-            flags_html += '<span class="flag-chip flag-red">Sanctions</span>'
-        if not flags_html:
-            flags_html = '<span style="color:#aaa;font-size:0.78rem">—</span>'
-
         st.markdown(
             f'<div style="border:1px solid #dde3ed;border-radius:12px;'
             f'padding:14px 16px;margin-bottom:8px;background:#ffffff;'
             f'box-shadow:0 1px 3px rgba(13,33,55,0.06);">',
             unsafe_allow_html=True,
         )
-        c = st.columns(H)
+        # vertical_alignment="center" puts every cell's content on the same
+        # baseline regardless of its natural height (added in Streamlit 1.36).
+        try:
+            c = st.columns(H, vertical_alignment="center")
+        except TypeError:
+            c = st.columns(H)
 
         # Status badge
         c[0].markdown(
-            f'<div style="padding:2px 0">'
-            f'{_DECISION_BADGE.get(status, f"<span>{status}</span>")}</div>',
+            _DECISION_BADGE.get(status, f"<span>{status}</span>"),
             unsafe_allow_html=True,
         )
 
-        # Clickable customer name — opens investigation modal
-        c[1].markdown(
-            f'<div style="padding:2px 0">'
-            f'<div style="font-weight:600;color:#0d2137;font-size:0.95rem">{name}</div>'
-            f'<div style="font-size:0.75rem;color:#546e8a;margin-top:2px">{cid} · {ctry}</div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-        if c[1].button("Open", key=f"db_open_{cid}", use_container_width=False,
-                       help=f"Open investigation for {name}"):
-            open_investigation(cid)
-            st.rerun()
+        # Clickable customer name rendered as a hyperlink-style button. The
+        # empty anchor div tells our CSS to flatten the next button into a
+        # link. Bypass open_investigation() so browsing the database doesn't
+        # silently flip a 'new' customer into 'under_review', and set
+        # modal_readonly so the modal swaps its action tabs for a past-
+        # decisions overview.
+        with c[1]:
+            st.markdown('<div class="db-link-anchor"></div>',
+                        unsafe_allow_html=True)
+            if st.button(
+                name,
+                key=f"db_name_{cid}",
+                help=f"Open profile for {name}",
+            ):
+                st.session_state["modal_customer_id"] = cid
+                st.session_state["modal_open"] = True
+                st.session_state["modal_readonly"] = True
+                st.rerun()
+            st.markdown(
+                f'<div style="font-size:0.75rem;color:#546e8a;'
+                f'margin-top:-2px">{cid} · {ctry}</div>',
+                unsafe_allow_html=True,
+            )
 
-        c[2].markdown(
-            f'<div style="padding:4px 0">{score_badge(score)}</div>',
-            unsafe_allow_html=True,
-        )
+        c[2].markdown(score_badge(score), unsafe_allow_html=True)
         c[3].markdown(
-            f'<div style="padding:4px 0">{flags_html}</div>',
-            unsafe_allow_html=True,
-        )
-        c[4].markdown(
-            f'<div style="padding:6px 0;font-size:0.82rem;color:#546e8a">{ctype}</div>',
+            f'<span style="font-size:0.82rem;color:#546e8a">{ctype}</span>',
             unsafe_allow_html=True,
         )
         st.markdown('</div>', unsafe_allow_html=True)
@@ -2114,16 +2213,22 @@ def main():
 
     render_sidebar()
 
-    with tab_queue:
-        render_queue_tab()
-    with tab_log:
-        render_decision_log_tab()
-    with tab_db:
-        render_database_tab()
+    # Performance shortcut: when the modal is about to open, the dialog
+    # overlay covers the entire main area, so re-running the per-row
+    # rendering of every tab (50 rows × widgets each) is wasted work that
+    # adds 1–2 seconds of latency before the dialog appears. Skip it while
+    # the modal is open and just render the dialog directly.
+    modal_open = (st.session_state.get("modal_open")
+                  and st.session_state.get("modal_customer_id"))
 
-    # Render the modal if one is open. Streamlit's st.dialog renders on top
-    # of whatever tab is active, so the user never has to leave the queue.
-    if st.session_state.get("modal_open") and st.session_state.get("modal_customer_id"):
+    if not modal_open:
+        with tab_queue:
+            render_queue_tab()
+        with tab_log:
+            render_decision_log_tab()
+        with tab_db:
+            render_database_tab()
+    else:
         render_investigation_dialog(st.session_state["modal_customer_id"])
 
 
