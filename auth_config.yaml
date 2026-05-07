@@ -1,0 +1,28 @@
+credentials:
+  usernames:
+    victor:
+      email: victorkrogh@gmail.com
+      first_name: Victor
+      last_name: Krogh
+      password: "$2b$12$UtsMB4OsCG9MYQ/hP1YBx.6phIGTiQCW9/HMpzElt3hjmvQ7lru8O"
+      roles:
+        - admin
+    analyst:
+      email: analyst@nordikbank.dk
+      first_name: AML
+      last_name: Analyst
+      password: "$2b$12$QAK7ZswxpAaAP2.aWSw0xuCbUupCPs3SR7oK/DcWbbhgLtwSFkdMa"
+      roles:
+        - analyst
+    demo:
+      email: demo@nordikbank.dk
+      first_name: Demo
+      last_name: User
+      password: "$2b$12$GkiMaem5wQZ.ptd0GXDgjemaT5E41hO8dnvQg.ZAjcrwPouArcWN."
+      roles:
+        - analyst
+
+cookie:
+  name: nordik_aml_workbench
+  key: "nordik_secret_key_2024_aml"
+  expiry_days: 1
