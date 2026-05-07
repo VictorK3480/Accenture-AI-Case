@@ -1190,6 +1190,27 @@ def render_investigation_dialog(customer_id):
         unsafe_allow_html=True,
     )
 
+    # ── Contact Details ───────────────────────────────────────────────────────
+    with st.expander("Contact Details", expanded=False):
+        contact_key = f"contact_{customer_id}"
+        default_contact = st.session_state.get(contact_key, {
+            "name":  name,
+            "person": "",
+            "role":   "",
+            "email":  f"{customer_id.lower()}@nordikbank.dk",
+        })
+        cd1, cd2 = st.columns(2)
+        cd_name   = cd1.text_input("Customer Name",  value=default_contact["name"],  key=f"cd_name_{customer_id}")
+        cd_person = cd2.text_input("Contact Person", value=default_contact["person"], key=f"cd_person_{customer_id}")
+        cd_role   = cd1.text_input("Contact Role",   value=default_contact["role"],  key=f"cd_role_{customer_id}")
+        cd_email  = cd2.text_input("Email",          value=default_contact["email"], key=f"cd_email_{customer_id}")
+        if st.button("Save Contact Details", key=f"cd_save_{customer_id}"):
+            st.session_state[contact_key] = {
+                "name": cd_name, "person": cd_person,
+                "role": cd_role, "email": cd_email,
+            }
+            st.success("Contact details saved.")
+
     # ── Section 2: Risk drivers & peer comparison ────────────────────────────
     with st.expander("Risk Drivers & Peer Comparison", expanded=True):
         if drivers is None:
@@ -1457,63 +1478,84 @@ def render_investigation_dialog(customer_id):
 
     # ── Action area ──────────────────────────────────────────────────────────
     st.markdown("---")
-    if not is_pending:
-        st.info(f"This customer has a final decision ({db_status}). No further "
-                f"actions are available.")
-        if st.button("Close", key="modal_close_btn"):
-            close_investigation()
-            st.rerun()
-        return
 
-    st.markdown('<div class="section-label" style="margin-top:0">'
-                'Decision</div>', unsafe_allow_html=True)
-    a_col1, a_col2 = st.columns([1, 2])
-    with a_col1:
-        analyst = st.text_input(
-            "Your name", value=st.session_state.get("modal_analyst", ""),
-            key="modal_analyst_input",
-            placeholder="Required to record a decision")
-    with a_col2:
-        reason = st.text_area(
-            "Reason / note",
-            value=st.session_state.get("modal_reason", ""),
-            key="modal_reason_input",
-            placeholder="Required — what evidence drove this decision?",
-            height=80)
+    # ── Tabs: Decision / Send Email ───────────────────────────────────────────
+    modal_tab1, modal_tab2 = st.tabs(["Decision", "Send Email"])
 
-    can_act = bool(analyst.strip()) and bool(reason.strip())
-    b_col1, b_col2, b_col3 = st.columns([1, 1, 1])
+    with modal_tab2:
+        st.markdown("#### Compose Email")
+        email_to = st.text_input("To", value=f"{customer_id.lower()}@nordikbank.dk",
+                                 key="email_to")
+        email_subject = st.text_input("Subject",
+                                      value=f"Re: Account Review — {name}",
+                                      key="email_subject")
+        email_body = st.text_area("Message",
+                                  value=f"Dear {name},\n\nWe are writing regarding your account...\n\nKind regards,\nNordikBank Compliance",
+                                  height=150, key="email_body")
+        ec1, ec2 = st.columns([1, 4])
+        with ec1:
+            if st.button("Send", key="email_send", type="primary",
+                         use_container_width=True):
+                st.success(f"Email sent to {email_to}")
 
-    with b_col1:
-        if st.button("Clear ✓", type="primary", key="modal_clear",
-                     disabled=not can_act, use_container_width=True):
-            transition_status(customer_id, "cleared",
-                              analyst_name=analyst.strip(),
-                              reason=reason.strip())
-            st.session_state["modal_analyst"] = analyst.strip()
-            st.success(f"Cleared {customer_id}.")
-            close_investigation()
-            st.rerun()
+    with modal_tab1:
+        if not is_pending:
+            st.info(f"This customer has a final decision ({db_status}). No further "
+                    f"actions are available.")
+            if st.button("Close", key="modal_close_btn"):
+                close_investigation()
+                st.rerun()
+            return
 
-    with b_col2:
-        if st.button("Escalate ⚠", key="modal_escalate",
-                     disabled=not can_act, use_container_width=True):
-            transition_status(customer_id, "escalated",
-                              analyst_name=analyst.strip(),
-                              reason=reason.strip())
-            st.session_state["modal_analyst"] = analyst.strip()
-            st.success(f"Escalated {customer_id} for FIU referral.")
-            close_investigation()
-            st.rerun()
+        st.markdown('<div class="section-label" style="margin-top:0">'
+                    'Decision</div>', unsafe_allow_html=True)
+        a_col1, a_col2 = st.columns([1, 2])
+        with a_col1:
+            analyst = st.text_input(
+                "Your Name", value=st.session_state.get("modal_analyst", ""),
+                key="modal_analyst_input",
+                placeholder="Required to record a decision")
+        with a_col2:
+            reason = st.text_area(
+                "Reason / Note",
+                value=st.session_state.get("modal_reason", ""),
+                key="modal_reason_input",
+                placeholder="Required — what evidence drove this decision?",
+                height=80)
 
-    with b_col3:
-        if st.button("Cancel", key="modal_cancel", use_container_width=True):
-            close_investigation()
-            st.rerun()
+        can_act = bool(analyst.strip()) and bool(reason.strip())
+        b_col1, b_col2, b_col3 = st.columns([1, 1, 1])
 
-    if not can_act:
-        st.caption("Both your name and a reason are required to clear or "
-                   "escalate this customer.")
+        with b_col1:
+            if st.button("Clear ✓", type="primary", key="modal_clear",
+                         disabled=not can_act, use_container_width=True):
+                transition_status(customer_id, "cleared",
+                                  analyst_name=analyst.strip(),
+                                  reason=reason.strip())
+                st.session_state["modal_analyst"] = analyst.strip()
+                st.success(f"Cleared {customer_id}.")
+                close_investigation()
+                st.rerun()
+
+        with b_col2:
+            if st.button("Escalate ⚠", key="modal_escalate",
+                         disabled=not can_act, use_container_width=True):
+                transition_status(customer_id, "escalated",
+                                  analyst_name=analyst.strip(),
+                                  reason=reason.strip())
+                st.session_state["modal_analyst"] = analyst.strip()
+                st.success(f"Escalated {customer_id} for FIU referral.")
+                close_investigation()
+                st.rerun()
+
+        with b_col3:
+            if st.button("Cancel", key="modal_cancel", use_container_width=True):
+                close_investigation()
+                st.rerun()
+
+        if not can_act:
+            st.caption("Both your name and a reason are required to clear or "
+                       "escalate this customer.")
 
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
@@ -1542,47 +1584,6 @@ def render_sidebar():
                 <div class="label">{cfg["label"]}</div>
                 <div class="value" style="color:{cfg["num_color"]}">{counts.get(status, 0):,}</div>
             </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown("---")
-        # Dark / Light mode toggle
-        dark_mode = st.toggle("Dark mode", key="dark_mode",
-                              value=st.session_state.get("dark_mode", False))
-        if dark_mode:
-            st.markdown("""
-            <style>
-            html, body, .stApp, .main { background-color: #0d1117 !important; color: #e6edf3 !important; }
-            .card { background: #161b22 !important; border-color: #30363d !important; }
-            .card-blue { background: #1a2744 !important; border-color: #388bfd !important; }
-            [data-testid="stMainBlockContainer"],
-            [data-testid="stAppViewContainer"] { background-color: #0d1117 !important; }
-            .stTabs [data-baseweb="tab-list"] { background-color: #161b22 !important; }
-            .stTabs [aria-selected="true"] { background-color: #21262d !important; color: #e6edf3 !important; }
-            .stTabs [data-baseweb="tab"] { color: #8b949e !important; }
-            h1, h2, h3 { color: #e6edf3 !important; }
-            p, label, caption { color: #c9d1d9 !important; }
-            [data-testid="stExpander"] { border-color: #30363d !important; background: #161b22 !important; }
-            [data-testid="stExpander"] summary { color: #e6edf3 !important; }
-            hr { border-color: #30363d !important; }
-            input, select, textarea { background-color: #21262d !important; color: #e6edf3 !important; border-color: #30363d !important; }
-            /* Override hardcoded dark text colors in HTML markdown blocks */
-            div[style*="color:#0d2137"], span[style*="color:#0d2137"] { color: #e6edf3 !important; }
-            div[style*="color:#546e8a"], span[style*="color:#546e8a"] { color: #8b949e !important; }
-            /* Card row backgrounds */
-            div[style*="background:#ffffff"] { background: #161b22 !important; border-color: #30363d !important; }
-            div[style*="background:#f5f8fc"] { background: #21262d !important; }
-            /* Section labels */
-            .section-label { color: #8b949e !important; }
-            /* Driver rows */
-            .driver-row { background: #1a2e1a !important; }
-            .driver-row.driver-high { background: #2e1a1a !important; }
-            .driver-row.driver-elevated { background: #2e2a1a !important; }
-            /* Metric values */
-            [data-testid="stMetricValue"] { color: #e6edf3 !important; }
-            [data-testid="stMetricLabel"] { color: #8b949e !important; }
-            /* Dataframe */
-            [data-testid="stDataFrame"] { background: #161b22 !important; color: #e6edf3 !important; }
-            </style>
             """, unsafe_allow_html=True)
 
         st.markdown("---")
@@ -1653,7 +1654,7 @@ def render_queue_tab():
     queue["scored_at"] = pd.Timestamp.now().strftime("%d/%m/%Y %H:%M")
     queue = queue.sort_values(sort_col, ascending=sort_asc)
 
-    st.markdown("### Alert queue")
+    st.markdown("### Alert Queue")
     st.markdown(
         f'<p style="color:#546e8a;font-size:0.85rem;margin-bottom:12px">'
         f'<strong>{len(queue):,}</strong> customers pending review · '
@@ -1688,11 +1689,21 @@ def render_queue_tab():
     st.markdown('<hr style="margin:0 0 4px;border-top:1px solid #dde3ed">',
                 unsafe_allow_html=True)
 
-    # ── Rows ───────────────────────────────────────────────────────────────────
+    # ── Pagination ─────────────────────────────────────────────────────────────
+    PAGE = 50
+    total = len(queue)
+    if "queue_page" not in st.session_state:
+        st.session_state["queue_page"] = 0
+    page = st.session_state["queue_page"]
+    total_pages = max(1, (total + PAGE - 1) // PAGE)
+    page = min(page, total_pages - 1)
+    visible = queue.iloc[page * PAGE:(page + 1) * PAGE]
+
+    # ── Rows — card design ─────────────────────────────────────────────────────
     status_options = ["new", "under_review", "cleared", "escalated"]
     status_labels  = ["New", "Under Review", "Complete", "Escalated"]
 
-    for _, row in queue.iterrows():
+    for _, row in visible.iterrows():
         cid    = row["customer_id"]
         name   = row.get("display_name", cid)
         score  = row["predicted_probability"]
@@ -1700,57 +1711,66 @@ def render_queue_tab():
         ctry   = row.get("residency_country", "—")
         ctype  = row.get("customer_type", "—")
 
-        with st.container():
-            st.markdown(
-                '<div style="border:1px solid #dde3ed;border-radius:10px;'
-                'padding:8px 4px;margin-bottom:6px;background:#ffffff">',
-                unsafe_allow_html=True,
-            )
-            c = st.columns(H)
+        st.markdown(
+            f'<div style="border:1px solid #dde3ed;border-radius:12px;'
+            f'padding:14px 16px;margin-bottom:8px;background:#ffffff;'
+            f'box-shadow:0 1px 3px rgba(13,33,55,0.06);">',
+            unsafe_allow_html=True,
+        )
+        c = st.columns([2.8, 1.2, 1.4, 1.6, 0.8])
 
-            # Customer name + ID + country
-            c[0].markdown(
-                f'<div style="padding:6px 4px">'
-                f'<div style="font-weight:600;color:#0d2137">{name}</div>'
-                f'<div style="font-size:0.75rem;color:#546e8a">'
-                f'{cid} · {ctry} · {ctype}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+        c[0].markdown(
+            f'<div style="padding:2px 0">'
+            f'<div style="font-weight:600;color:#0d2137;font-size:0.95rem">{name}</div>'
+            f'<div style="font-size:0.75rem;color:#546e8a;margin-top:2px">'
+            f'{cid} · {ctry} · {ctype}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        c[1].markdown(
+            f'<div style="padding:4px 0">{score_badge(score)}</div>',
+            unsafe_allow_html=True,
+        )
+        c[2].markdown(
+            f'<div style="padding:6px 0;font-size:0.83rem;color:#546e8a">'
+            f'{row["scored_at"]}</div>',
+            unsafe_allow_html=True,
+        )
+        current_idx = status_options.index(status) if status in status_options else 0
+        new_status_label = c[3].selectbox(
+            "", status_labels, index=current_idx,
+            key=f"status_dd_{cid}", label_visibility="collapsed",
+        )
+        new_status = status_options[status_labels.index(new_status_label)]
+        if new_status != status:
+            transition_status(cid, new_status)
+            st.rerun()
 
-            # Risk label badge
-            c[1].markdown(
-                f'<div style="padding:10px 4px">{score_badge(score)}</div>',
-                unsafe_allow_html=True,
-            )
+        if c[4].button("Open →", key=f"open_{cid}", use_container_width=True):
+            open_investigation(cid)
+            st.rerun()
 
-            # Date added
-            c[2].markdown(
-                f'<div style="padding:10px 4px;font-size:0.83rem;color:#546e8a">'
-                f'{row["scored_at"]}</div>',
-                unsafe_allow_html=True,
-            )
+        st.markdown('</div>', unsafe_allow_html=True)
 
-            # Status dropdown — allows manual change without auto-navigating
-            current_idx = status_options.index(status) if status in status_options else 0
-            new_status_label = c[3].selectbox(
-                "",
-                status_labels,
-                index=current_idx,
-                key=f"status_dd_{cid}",
-                label_visibility="collapsed",
-            )
-            new_status = status_options[status_labels.index(new_status_label)]
-            if new_status != status:
-                transition_status(cid, new_status)
-                st.rerun()
-
-            # Open investigation button
-            if c[4].button("Open →", key=f"open_{cid}", use_container_width=True):
-                open_investigation(cid)
-                st.rerun()
-
-            st.markdown('</div>', unsafe_allow_html=True)
+    # ── Pagination controls ────────────────────────────────────────────────────
+    st.markdown("<br>", unsafe_allow_html=True)
+    p1, p2, p3 = st.columns([1, 2, 1])
+    with p1:
+        if st.button("← Previous", key="queue_prev", disabled=(page == 0),
+                     use_container_width=True):
+            st.session_state["queue_page"] = page - 1
+            st.rerun()
+    with p2:
+        st.markdown(
+            f'<div style="text-align:center;padding:8px;font-size:0.85rem;color:#546e8a">'
+            f'Page {page + 1} of {total_pages} · {total:,} customers</div>',
+            unsafe_allow_html=True,
+        )
+    with p3:
+        if st.button("Next →", key="queue_next", disabled=(page >= total_pages - 1),
+                     use_container_width=True):
+            st.session_state["queue_page"] = page + 1
+            st.rerun()
 
 
 # ── Tab 2: Decision Log ─────────────────────────────────────────────────────
@@ -1788,7 +1808,7 @@ def render_decision_log_tab():
     )
 
     f1, f2 = st.columns([2, 1])
-    f1.markdown("### Decision log")
+    f1.markdown("### Decision Log")
     decision_filter = f2.selectbox(
         "Show", ["All", "Escalated only", "Cleared only"],
         key="log_filter", label_visibility="collapsed")
@@ -1799,7 +1819,12 @@ def render_decision_log_tab():
 
     PAGE = 50
     total = len(history)
-    visible = history.head(PAGE)
+    if "log_page" not in st.session_state:
+        st.session_state["log_page"] = 0
+    log_page = st.session_state["log_page"]
+    total_pages = max(1, (total + PAGE - 1) // PAGE)
+    log_page = min(log_page, total_pages - 1)
+    visible = history.iloc[log_page * PAGE:(log_page + 1) * PAGE]
 
     st.markdown(
         f'<p style="color:#546e8a;font-size:0.85rem;margin-bottom:8px">'
@@ -1857,9 +1882,25 @@ def render_decision_log_tab():
             unsafe_allow_html=True,
         )
 
-    if total > PAGE:
-        st.caption(f"Showing the {PAGE} most recent decisions of {total:,}. "
-                   f"Use the filter above to narrow by Cleared / Escalated.")
+    # ── Pagination controls ────────────────────────────────────────────────────
+    st.markdown("<br>", unsafe_allow_html=True)
+    lp1, lp2, lp3 = st.columns([1, 2, 1])
+    with lp1:
+        if st.button("← Previous", key="log_prev", disabled=(log_page == 0),
+                     use_container_width=True):
+            st.session_state["log_page"] = log_page - 1
+            st.rerun()
+    with lp2:
+        st.markdown(
+            f'<div style="text-align:center;padding:8px;font-size:0.85rem;color:#546e8a">'
+            f'Page {log_page + 1} of {total_pages} · {total:,} decisions</div>',
+            unsafe_allow_html=True,
+        )
+    with lp3:
+        if st.button("Next →", key="log_next", disabled=(log_page >= total_pages - 1),
+                     use_container_width=True):
+            st.session_state["log_page"] = log_page + 1
+            st.rerun()
 
 
 # ── Tab 3: Customer Database ────────────────────────────────────────────────
@@ -1899,18 +1940,18 @@ def render_database_tab():
         return "High risk" if score >= RISK_HIGH else "Medium risk" if score >= RISK_MED else "Low risk"
     df["risk_level"] = df["predicted_probability"].apply(risk_level)
 
-    st.markdown("### Customer database")
+    st.markdown("### Customer Database")
 
     # ── Filters ────────────────────────────────────────────────────────────────
     fc1, fc2, fc3, fc4, fc5 = st.columns([2, 1.2, 1.2, 1.2, 1.2])
     search_id = fc1.text_input(
-        "Search by ID or name", placeholder="CUST_… or any name fragment",
+        "Search By ID Or Name", placeholder="CUST_… or any name fragment",
         key="db_search")
     type_f = fc2.multiselect(
-        "Customer type", ["personal", "corporate", "sole_trader", "SME"],
+        "Customer Type", ["personal", "corporate", "sole_trader", "SME"],
         default=[], key="db_type")
     risk_f = fc3.selectbox(
-        "Risk level", ["All", "High risk", "Medium risk", "Low risk"],
+        "Risk Level", ["All", "High Risk", "Medium Risk", "Low Risk"],
         key="db_risk")
     status_f = fc4.selectbox(
         "Status", ["All", "New", "Under Review", "Cleared", "Escalated"],
@@ -1925,7 +1966,8 @@ def render_database_tab():
     if type_f:
         mask &= df["customer_type"].isin(type_f)
     if risk_f != "All":
-        mask &= df["risk_level"] == risk_f
+        risk_map = {"High Risk": "High risk", "Medium Risk": "Medium risk", "Low Risk": "Low risk"}
+        mask &= df["risk_level"] == risk_map.get(risk_f, risk_f)
     if status_f != "All":
         status_map = {"New": "new", "Under Review": "under_review",
                       "Cleared": "cleared", "Escalated": "escalated"}
@@ -1950,24 +1992,30 @@ def render_database_tab():
         st.info("No customers match the current filters.")
         return
 
+    # ── Pagination ─────────────────────────────────────────────────────────────
     PAGE = 50
     total = len(filtered)
-    visible = filtered.head(PAGE)
+    if "db_page" not in st.session_state:
+        st.session_state["db_page"] = 0
+    db_page = st.session_state["db_page"]
+    total_pages = max(1, (total + PAGE - 1) // PAGE)
+    db_page = min(db_page, total_pages - 1)
+    visible = filtered.iloc[db_page * PAGE:(db_page + 1) * PAGE]
 
     # ── Column headers ──────────────────────────────────────────────────────────
-    H = [1.1, 2.8, 0.9, 1.6, 1.2]
+    H = [1.0, 2.6, 1.0, 1.6, 1.2]
     h = st.columns(H)
-    for i, t in enumerate(("Status", "Customer", "Risk", "Compliance flags", "Type")):
+    for i, t in enumerate(("Status", "Customer", "Risk", "Compliance Flags", "Type")):
         h[i].markdown(
             f'<div style="font-size:0.7rem;font-weight:700;'
-            f'letter-spacing:0.08em;color:#546e8a;text-transform:uppercase;'
+            f'letter-spacing:0.06em;color:#546e8a;text-transform:uppercase;'
             f'padding:6px 4px">{t}</div>',
             unsafe_allow_html=True,
         )
-    st.markdown('<hr style="margin:0 0 6px;border-top:1px solid #dde3ed">',
+    st.markdown('<hr style="margin:0 0 8px;border-top:1px solid #dde3ed">',
                 unsafe_allow_html=True)
 
-    # ── Rows ────────────────────────────────────────────────────────────────────
+    # ── Rows — card design ─────────────────────────────────────────────────────
     for _, row in visible.iterrows():
         cid    = row["customer_id"]
         name   = row.get("display_name") or cid
@@ -1979,12 +2027,12 @@ def render_database_tab():
         ctype  = row.get("customer_type") or "—"
         status = row.get("current_status", "new")
 
-        # Compliance flags — only show medium/high KYC, PEP, sanctions
+        # Compliance flags — only medium/high KYC, PEP, sanctions
         flags_html = ""
         if kyc == "high":
-            flags_html += '<span class="flag-chip flag-red">Rating: high</span>'
+            flags_html += '<span class="flag-chip flag-red">Rating: High</span>'
         elif kyc == "medium":
-            flags_html += '<span class="flag-chip flag-amber">Rating: medium</span>'
+            flags_html += '<span class="flag-chip flag-amber">Rating: Medium</span>'
         if pep:
             flags_html += '<span class="flag-chip flag-red">PEP</span>'
         if sanc:
@@ -1992,36 +2040,67 @@ def render_database_tab():
         if not flags_html:
             flags_html = '<span style="color:#aaa;font-size:0.78rem">—</span>'
 
+        st.markdown(
+            f'<div style="border:1px solid #dde3ed;border-radius:12px;'
+            f'padding:14px 16px;margin-bottom:8px;background:#ffffff;'
+            f'box-shadow:0 1px 3px rgba(13,33,55,0.06);">',
+            unsafe_allow_html=True,
+        )
         c = st.columns(H)
-        # Plain status badge — display only, not clickable
+
+        # Status badge
         c[0].markdown(
-            f'<div style="padding:8px 4px">'
+            f'<div style="padding:2px 0">'
             f'{_DECISION_BADGE.get(status, f"<span>{status}</span>")}</div>',
             unsafe_allow_html=True,
         )
+
+        # Clickable customer name — opens investigation modal
         c[1].markdown(
-            f'<div style="padding:6px 4px">'
-            f'<div style="font-weight:600;color:#0d2137">{name}</div>'
-            f'<div style="font-size:0.75rem;color:#546e8a">{cid} · {ctry}</div>'
+            f'<div style="padding:2px 0">'
+            f'<div style="font-weight:600;color:#0d2137;font-size:0.95rem">{name}</div>'
+            f'<div style="font-size:0.75rem;color:#546e8a;margin-top:2px">{cid} · {ctry}</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
+        if c[1].button("Open", key=f"db_open_{cid}", use_container_width=False,
+                       help=f"Open investigation for {name}"):
+            open_investigation(cid)
+            st.rerun()
+
         c[2].markdown(
-            f'<div style="padding:10px 4px">{score_badge(score)}</div>',
+            f'<div style="padding:4px 0">{score_badge(score)}</div>',
             unsafe_allow_html=True,
         )
         c[3].markdown(
-            f'<div style="padding:8px 4px">{flags_html}</div>',
+            f'<div style="padding:4px 0">{flags_html}</div>',
             unsafe_allow_html=True,
         )
         c[4].markdown(
-            f'<div style="padding:10px 4px;font-size:0.82rem;color:#546e8a">{ctype}</div>',
+            f'<div style="padding:6px 0;font-size:0.82rem;color:#546e8a">{ctype}</div>',
             unsafe_allow_html=True,
         )
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    if total > PAGE:
-        st.caption(f"Showing first {PAGE} of {total:,} matches. "
-                   "Refine the filters to narrow.")
+    # ── Pagination controls ────────────────────────────────────────────────────
+    st.markdown("<br>", unsafe_allow_html=True)
+    dp1, dp2, dp3 = st.columns([1, 2, 1])
+    with dp1:
+        if st.button("← Previous", key="db_prev", disabled=(db_page == 0),
+                     use_container_width=True):
+            st.session_state["db_page"] = db_page - 1
+            st.rerun()
+    with dp2:
+        st.markdown(
+            f'<div style="text-align:center;padding:8px;font-size:0.85rem;color:#546e8a">'
+            f'Page {db_page + 1} of {total_pages} · {total:,} customers</div>',
+            unsafe_allow_html=True,
+        )
+    with dp3:
+        if st.button("Next →", key="db_next", disabled=(db_page >= total_pages - 1),
+                     use_container_width=True):
+            st.session_state["db_page"] = db_page + 1
+            st.rerun()
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
