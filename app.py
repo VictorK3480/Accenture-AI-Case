@@ -40,9 +40,9 @@ H1_PATH          = MODEL_DIR / "features_h1_2024.parquet"
 DB_PATH = "workbench_state.db"
 
 # Display-only thresholds for risk colour bands.
-# Low: < 0.30 (green), Medium: 0.30–0.50 (yellow), High: ≥ 0.50 (red).
+# Low: < 0.10 (gray), Medium: 0.10–0.50 (amber), High: ≥ 0.50 (red).
 RISK_HIGH = 0.50
-RISK_MED  = 0.30
+RISK_MED  = 0.10
 
 # Seeding thresholds. Tuned to this model's compressed score distribution
 # (most negatives 0.24–0.29, positives 0.37–0.65) so the seeded demo state
@@ -178,8 +178,8 @@ FEATURE_LABELS = {
 
     # Static KYC
     "kyc_risk_rating": (
-        "KYC risk rating", "low/medium/high",
-        "Bank's own Know Your Customer risk classification"),
+        "Risk rating", "low/medium/high",
+        "Bank's own customer risk classification"),
     "pep_status": (
         "PEP status", "yes/no",
         "Politically Exposed Person — subject to enhanced due diligence"),
@@ -190,22 +190,13 @@ FEATURE_LABELS = {
 
 
 # ── Visual tokens ────────────────────────────────────────────────────────────
-TYPE_COLOR = {
-    "personal":    "#1565c0",
-    "corporate":   "#0d2137",
-    "sole_trader": "#6a1b9a",
-    "SME":         "#00695c",
-}
 
-# Card backgrounds for the four-up summary box in the sidebar — vivid solid
-# fills so they read clearly against the dark navy sidebar.
-# (The sidebar forces all text to white; "New" uses a solid blue-grey rather
-# than white so the white label/value remain visible.)
+# Sidebar status cards — neutral dark background, colored numbers only.
 STATUS_CARD = {
-    "new":          {"bg": "#546e8a", "fg": "#ffffff", "label": "New"},
-    "under_review": {"bg": "#1565c0", "fg": "#ffffff", "label": "Under Review"},
-    "cleared":      {"bg": "#2e7d32", "fg": "#ffffff", "label": "Cleared"},
-    "escalated":    {"bg": "#c62828", "fg": "#ffffff", "label": "Escalated"},
+    "new":          {"bg": "#1e3a52", "fg": "#ffffff", "num_color": "#ffffff",  "label": "New"},
+    "under_review": {"bg": "#1e3a52", "fg": "#ffffff", "num_color": "#f9a825",  "label": "Under Review"},
+    "cleared":      {"bg": "#1e3a52", "fg": "#ffffff", "num_color": "#2e7d32",  "label": "Cleared"},
+    "escalated":    {"bg": "#1e3a52", "fg": "#ffffff", "num_color": "#c62828",  "label": "Escalated"},
 }
 
 
@@ -551,22 +542,21 @@ def risk_band(score):
     return "high" if score >= RISK_HIGH else "elevated" if score >= RISK_MED else "low"
 
 def score_badge(score):
-    """Pill-shaped badge for risk score. Traffic-light: green/yellow/red."""
+    """Pill-shaped badge for risk score. Traffic-light: gray/amber/red."""
     if score is None or pd.isna(score):
         return '<span style="color:#aaa">—</span>'
-    color = ("#c62828" if score >= RISK_HIGH       # red
-             else "#f9a825" if score >= RISK_MED   # yellow
-             else "#2e7d32")                       # green
-    label = ("High risk" if score >= RISK_HIGH
-             else "Medium risk" if score >= RISK_MED
-             else "Low risk")
+    if score >= RISK_HIGH:
+        color, label = "#c62828", "High risk"
+    elif score >= RISK_MED:
+        color, label = "#f9a825", "Medium risk"
+    else:
+        color, label = "#888888", "Low risk"
     return (f'<span style="background:{color};color:white;'
             f'padding:3px 10px;border-radius:20px;font-weight:600;'
-            f'font-size:0.85em" title="{label}">{score:.2f}</span>')
+            f'font-size:0.85em">{label}</span>')
 
 def type_badge(ctype):
-    color = TYPE_COLOR.get(ctype, "#546e8a")
-    return (f'<span style="background:{color};color:white;'
+    return (f'<span style="background:#f1f1f1;color:#546e8a;'
             f'padding:2px 9px;border-radius:20px;font-size:0.72em;'
             f'font-weight:600">{ctype}</span>')
 
@@ -1550,8 +1540,49 @@ def render_sidebar():
             st.markdown(f"""
             <div class="status-card" style="background:{cfg["bg"]};color:{cfg["fg"]}">
                 <div class="label">{cfg["label"]}</div>
-                <div class="value">{counts.get(status, 0):,}</div>
+                <div class="value" style="color:{cfg["num_color"]}">{counts.get(status, 0):,}</div>
             </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
+        # Dark / Light mode toggle
+        dark_mode = st.toggle("Dark mode", key="dark_mode",
+                              value=st.session_state.get("dark_mode", False))
+        if dark_mode:
+            st.markdown("""
+            <style>
+            html, body, .stApp, .main { background-color: #0d1117 !important; color: #e6edf3 !important; }
+            .card { background: #161b22 !important; border-color: #30363d !important; }
+            .card-blue { background: #1a2744 !important; border-color: #388bfd !important; }
+            [data-testid="stMainBlockContainer"],
+            [data-testid="stAppViewContainer"] { background-color: #0d1117 !important; }
+            .stTabs [data-baseweb="tab-list"] { background-color: #161b22 !important; }
+            .stTabs [aria-selected="true"] { background-color: #21262d !important; color: #e6edf3 !important; }
+            .stTabs [data-baseweb="tab"] { color: #8b949e !important; }
+            h1, h2, h3 { color: #e6edf3 !important; }
+            p, label, caption { color: #c9d1d9 !important; }
+            [data-testid="stExpander"] { border-color: #30363d !important; background: #161b22 !important; }
+            [data-testid="stExpander"] summary { color: #e6edf3 !important; }
+            hr { border-color: #30363d !important; }
+            input, select, textarea { background-color: #21262d !important; color: #e6edf3 !important; border-color: #30363d !important; }
+            /* Override hardcoded dark text colors in HTML markdown blocks */
+            div[style*="color:#0d2137"], span[style*="color:#0d2137"] { color: #e6edf3 !important; }
+            div[style*="color:#546e8a"], span[style*="color:#546e8a"] { color: #8b949e !important; }
+            /* Card row backgrounds */
+            div[style*="background:#ffffff"] { background: #161b22 !important; border-color: #30363d !important; }
+            div[style*="background:#f5f8fc"] { background: #21262d !important; }
+            /* Section labels */
+            .section-label { color: #8b949e !important; }
+            /* Driver rows */
+            .driver-row { background: #1a2e1a !important; }
+            .driver-row.driver-high { background: #2e1a1a !important; }
+            .driver-row.driver-elevated { background: #2e2a1a !important; }
+            /* Metric values */
+            [data-testid="stMetricValue"] { color: #e6edf3 !important; }
+            [data-testid="stMetricLabel"] { color: #8b949e !important; }
+            /* Dataframe */
+            [data-testid="stDataFrame"] { background: #161b22 !important; color: #e6edf3 !important; }
+            </style>
             """, unsafe_allow_html=True)
 
         st.markdown("---")
@@ -1588,9 +1619,6 @@ def render_queue_tab():
         return
 
     customers = load_customers()
-    cohort_bl = load_cohort_baselines()
-    bl_idx    = baselines_indexed()
-
     statuses = get_all_statuses()
     pending_ids = {cid for cid, s in statuses.items()
                    if s in ("new", "under_review")}
@@ -1599,78 +1627,149 @@ def render_queue_tab():
         return
 
     queue = predictions.merge(
-        customers[["customer_id", "customer_type", "residency_country",
-                   "kyc_risk_rating", "pep_status", "sanctions_screening_flag",
-                   "display_name"]],
+        customers[["customer_id", "customer_type", "residency_country", "display_name"]],
         on="customer_id", how="left",
     )
     queue = queue[queue["customer_id"].isin(pending_ids)].copy()
     queue["status"] = queue["customer_id"].map(statuses).fillna("new")
-    queue = queue.sort_values("predicted_probability", ascending=False)
+
+    # ── Sort state ─────────────────────────────────────────────────────────────
+    if "queue_sort_col" not in st.session_state:
+        st.session_state["queue_sort_col"] = "predicted_probability"
+        st.session_state["queue_sort_asc"] = False
+
+    sort_col = st.session_state["queue_sort_col"]
+    sort_asc = st.session_state["queue_sort_asc"]
+
+    # Map column names to dataframe columns
+    col_map = {
+        "Customer":    "display_name",
+        "Risk":        "predicted_probability",
+        "Date added":  "scored_at",
+        "Status":      "status",
+    }
+
+    # Assign scored_at before sorting
+    queue["scored_at"] = pd.Timestamp.now().strftime("%d/%m/%Y %H:%M")
+    queue = queue.sort_values(sort_col, ascending=sort_asc)
 
     st.markdown("### Alert queue")
     st.markdown(
-        f'<p style="color:#546e8a;font-size:0.85rem;margin-bottom:8px">'
-        f'<strong>{len(queue):,}</strong> customers pending review '
-        f'(click <em>Status</em> on any row to investigate)</p>',
+        f'<p style="color:#546e8a;font-size:0.85rem;margin-bottom:12px">'
+        f'<strong>{len(queue):,}</strong> customers pending review · '
+        f'<em>Click a column header to sort</em></p>',
         unsafe_allow_html=True,
     )
 
-    # Header row — column widths kept tight so everything fits without scroll.
-    H = [1.1, 2.6, 0.8, 2.6]
+    # ── Clickable column headers ───────────────────────────────────────────────
+    H = [2.8, 1.2, 1.4, 1.4, 0.8]
     h = st.columns(H)
-    for i, t in enumerate(("Status", "Customer", "Risk", "Risk flags")):
-        h[i].markdown(
-            f'<div style="font-size:0.7rem;font-weight:700;'
-            f'letter-spacing:0.08em;color:#546e8a;text-transform:uppercase;'
-            f'padding:6px 4px">{t}</div>',
-            unsafe_allow_html=True,
-        )
-    st.markdown('<hr style="margin:0 0 6px;border-top:1px solid #dde3ed">',
+    for i, t in enumerate(("Customer", "Risk", "Date added", "Status", "")):
+        if t == "":
+            h[i].markdown("", unsafe_allow_html=True)
+            continue
+        df_col = col_map.get(t, "")
+        is_active = (df_col == sort_col)
+        arrow = (" ↑" if (is_active and sort_asc) else " ↓" if is_active else "")
+        style = ("color:#0d2137;font-weight:800;" if is_active
+                 else "color:#546e8a;font-weight:700;")
+        if h[i].button(
+            f"{t}{arrow}",
+            key=f"qh_{t}",
+            use_container_width=True,
+        ):
+            if sort_col == df_col:
+                st.session_state["queue_sort_asc"] = not sort_asc
+            else:
+                st.session_state["queue_sort_col"] = df_col
+                st.session_state["queue_sort_asc"] = (t == "Customer")
+            st.rerun()
+
+    st.markdown('<hr style="margin:0 0 4px;border-top:1px solid #dde3ed">',
                 unsafe_allow_html=True)
+
+    # ── Rows ───────────────────────────────────────────────────────────────────
+    status_options = ["new", "under_review", "cleared", "escalated"]
+    status_labels  = ["New", "Under Review", "Complete", "Escalated"]
 
     for _, row in queue.iterrows():
         cid    = row["customer_id"]
-        ctype  = row.get("customer_type", "—")
-        ctry   = row.get("residency_country", "—")
         name   = row.get("display_name", cid)
         score  = row["predicted_probability"]
         status = row.get("status", "new")
-        bl_row = bl_idx.loc[cid] if cid in bl_idx.index else None
-        cohort_row = (cohort_bl.loc[ctype] if ctype in cohort_bl.index else None)
-        flags = compute_risk_flags(row, bl_row, cohort_row, max_flags=3)
-        flags_html = render_flags_html(flags)
+        ctry   = row.get("residency_country", "—")
+        ctype  = row.get("customer_type", "—")
 
-        c = st.columns(H)
-        if c[0].button(_STATUS_SYMBOL.get(status, status),
-                       key=f"q_{cid}", use_container_width=True):
-            open_investigation(cid)
-            st.rerun()
-        c[1].markdown(
-            f'<div style="padding:6px 4px">'
-            f'<div style="font-weight:600;color:#0d2137">{name}</div>'
-            f'<div style="font-size:0.75rem;color:#546e8a">'
-            f'{ctry}&nbsp;·&nbsp;{type_badge(ctype)}</div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-        c[2].markdown(
-            f'<div style="padding:10px 4px">{score_badge(score)}</div>',
-            unsafe_allow_html=True,
-        )
-        c[3].markdown(
-            f'<div style="padding:10px 4px">{flags_html}</div>',
-            unsafe_allow_html=True,
-        )
+        with st.container():
+            st.markdown(
+                '<div style="border:1px solid #dde3ed;border-radius:10px;'
+                'padding:8px 4px;margin-bottom:6px;background:#ffffff">',
+                unsafe_allow_html=True,
+            )
+            c = st.columns(H)
+
+            # Customer name + ID + country
+            c[0].markdown(
+                f'<div style="padding:6px 4px">'
+                f'<div style="font-weight:600;color:#0d2137">{name}</div>'
+                f'<div style="font-size:0.75rem;color:#546e8a">'
+                f'{cid} · {ctry} · {ctype}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+            # Risk label badge
+            c[1].markdown(
+                f'<div style="padding:10px 4px">{score_badge(score)}</div>',
+                unsafe_allow_html=True,
+            )
+
+            # Date added
+            c[2].markdown(
+                f'<div style="padding:10px 4px;font-size:0.83rem;color:#546e8a">'
+                f'{row["scored_at"]}</div>',
+                unsafe_allow_html=True,
+            )
+
+            # Status dropdown — allows manual change without auto-navigating
+            current_idx = status_options.index(status) if status in status_options else 0
+            new_status_label = c[3].selectbox(
+                "",
+                status_labels,
+                index=current_idx,
+                key=f"status_dd_{cid}",
+                label_visibility="collapsed",
+            )
+            new_status = status_options[status_labels.index(new_status_label)]
+            if new_status != status:
+                transition_status(cid, new_status)
+                st.rerun()
+
+            # Open investigation button
+            if c[4].button("Open →", key=f"open_{cid}", use_container_width=True):
+                open_investigation(cid)
+                st.rerun()
+
+            st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ── Tab 2: Decision Log ─────────────────────────────────────────────────────
 # Decision symbols used in the table (st.dataframe can't render coloured chips,
 # so we prefix with an emoji and let the pill-style status_badge live in the
 # modal's read-only header instead).
-_DECISION_SYMBOL = {
-    "cleared":   "🟢 Cleared",
-    "escalated": "🔴 Escalated",
+_DECISION_BADGE = {
+    "new":          '<span style="background:#f1f1f1;color:#546e8a;padding:4px 12px;'
+                    'border-radius:20px;font-size:0.82em;font-weight:600;'
+                    'border:1px solid #54607a40">New</span>',
+    "under_review": '<span style="background:#fff8e1;color:#b78a00;padding:4px 12px;'
+                    'border-radius:20px;font-size:0.82em;font-weight:600;'
+                    'border:1px solid #f9a82540">Under Review</span>',
+    "cleared":      '<span style="background:#e8f5e9;color:#2e7d32;padding:4px 12px;'
+                    'border-radius:20px;font-size:0.82em;font-weight:600;'
+                    'border:1px solid #2e7d3240">Cleared</span>',
+    "escalated":    '<span style="background:#ffebee;color:#c62828;padding:4px 12px;'
+                    'border-radius:20px;font-size:0.82em;font-weight:600;'
+                    'border:1px solid #c6282840">Escalated</span>',
 }
 
 
@@ -1705,11 +1804,11 @@ def render_decision_log_tab():
     st.markdown(
         f'<p style="color:#546e8a;font-size:0.85rem;margin-bottom:8px">'
         f'Showing <strong>{len(visible):,}</strong> of <strong>{total:,}</strong> '
-        f'decisions (most recent first · click <em>Status</em> to open)</p>',
+        f'decisions (most recent first)</p>',
         unsafe_allow_html=True,
     )
 
-    H = [1.1, 2.4, 1.6, 1.4, 3.5]
+    H = [1.2, 2.4, 1.6, 1.4, 3.5]
     h = st.columns(H)
     for i, t in enumerate(("Status", "Customer", "Analyst", "When", "Reason")):
         h[i].markdown(
@@ -1732,11 +1831,12 @@ def render_decision_log_tab():
         reason  = row.get("reason_note") or ""
 
         c = st.columns(H)
-        if c[0].button(_STATUS_SYMBOL.get(dec, dec),
-                       key=f"l_{row['id']}", use_container_width=True):
-            st.session_state["modal_customer_id"] = cid
-            st.session_state["modal_open"] = True
-            st.rerun()
+        # Plain colored badge — no round ball, no button
+        c[0].markdown(
+            f'<div style="padding:8px 4px">'
+            f'{_DECISION_BADGE.get(dec, f"<span>{dec}</span>")}</div>',
+            unsafe_allow_html=True,
+        )
         c[1].markdown(
             f'<div style="padding:6px 4px">'
             f'<div style="font-weight:600;color:#0d2137">{name}</div>'
@@ -1792,38 +1892,48 @@ def render_database_tab():
 
     df["current_status"] = df["customer_id"].map(statuses).fillna("new")
 
+    # Assign risk level label based on score
+    def risk_level(score):
+        if pd.isna(score):
+            return "Low risk"
+        return "High risk" if score >= RISK_HIGH else "Medium risk" if score >= RISK_MED else "Low risk"
+    df["risk_level"] = df["predicted_probability"].apply(risk_level)
+
     st.markdown("### Customer database")
 
-    fc1, fc2, fc3, fc4 = st.columns([2, 1.4, 1.2, 1.2])
+    # ── Filters ────────────────────────────────────────────────────────────────
+    fc1, fc2, fc3, fc4, fc5 = st.columns([2, 1.2, 1.2, 1.2, 1.2])
     search_id = fc1.text_input(
         "Search by ID or name", placeholder="CUST_… or any name fragment",
         key="db_search")
     type_f = fc2.multiselect(
         "Customer type", ["personal", "corporate", "sole_trader", "SME"],
         default=[], key="db_type")
-    kyc_f = fc3.multiselect(
-        "KYC rating", ["low", "medium", "high"], default=[], key="db_kyc")
-    pep_f = fc4.selectbox("PEP", ["All", "Yes", "No"], key="db_pep")
+    risk_f = fc3.selectbox(
+        "Risk level", ["All", "High risk", "Medium risk", "Low risk"],
+        key="db_risk")
+    status_f = fc4.selectbox(
+        "Status", ["All", "New", "Under Review", "Cleared", "Escalated"],
+        key="db_status")
+    pep_f = fc5.selectbox("PEP", ["All", "Yes", "No"], key="db_pep")
 
-    score_min, score_max = st.select_slider(
-        "Risk score range",
-        options=[round(x * 0.05, 2) for x in range(0, 21)],
-        value=(0.0, 1.0), key="db_score")
-
+    # ── Filter logic ────────────────────────────────────────────────────────────
     mask = pd.Series([True] * len(df), index=df.index)
     if search_id:
         mask &= (df["customer_id"].str.contains(search_id, case=False, na=False)
                  | df["display_name"].str.contains(search_id, case=False, na=False))
     if type_f:
         mask &= df["customer_type"].isin(type_f)
-    if kyc_f:
-        mask &= df["kyc_risk_rating"].isin(kyc_f)
+    if risk_f != "All":
+        mask &= df["risk_level"] == risk_f
+    if status_f != "All":
+        status_map = {"New": "new", "Under Review": "under_review",
+                      "Cleared": "cleared", "Escalated": "escalated"}
+        mask &= df["current_status"] == status_map.get(status_f, status_f)
     if pep_f == "Yes":
         mask &= df["pep_status"].astype(str).str.lower().isin(("true", "1", "yes"))
     elif pep_f == "No":
         mask &= ~df["pep_status"].astype(str).str.lower().isin(("true", "1", "yes"))
-    mask &= ((df["predicted_probability"].fillna(0) >= score_min) &
-             (df["predicted_probability"].fillna(0) <= score_max))
 
     filtered = df[mask].copy()
     if filtered["predicted_probability"].notna().any():
@@ -1832,7 +1942,7 @@ def render_database_tab():
     st.markdown(
         f'<p style="color:#546e8a;font-size:0.85rem;margin-bottom:8px">'
         f'<strong>{len(filtered):,}</strong> of <strong>{len(df):,}</strong> '
-        f'customers (click a row, then "Open selected")</p>',
+        f'customers</p>',
         unsafe_allow_html=True,
     )
 
@@ -1844,9 +1954,10 @@ def render_database_tab():
     total = len(filtered)
     visible = filtered.head(PAGE)
 
-    H = [1.1, 2.6, 0.7, 1.6, 1.6]
+    # ── Column headers ──────────────────────────────────────────────────────────
+    H = [1.1, 2.8, 0.9, 1.6, 1.2]
     h = st.columns(H)
-    for i, t in enumerate(("Status", "Customer", "Risk", "KYC / PEP / Sanc", "Type")):
+    for i, t in enumerate(("Status", "Customer", "Risk", "Compliance flags", "Type")):
         h[i].markdown(
             f'<div style="font-size:0.7rem;font-weight:700;'
             f'letter-spacing:0.08em;color:#546e8a;text-transform:uppercase;'
@@ -1856,6 +1967,7 @@ def render_database_tab():
     st.markdown('<hr style="margin:0 0 6px;border-top:1px solid #dde3ed">',
                 unsafe_allow_html=True)
 
+    # ── Rows ────────────────────────────────────────────────────────────────────
     for _, row in visible.iterrows():
         cid    = row["customer_id"]
         name   = row.get("display_name") or cid
@@ -1867,18 +1979,26 @@ def render_database_tab():
         ctype  = row.get("customer_type") or "—"
         status = row.get("current_status", "new")
 
-        kyc_chip = (f'<span class="flag-chip flag-red">KYC: high</span>' if kyc == "high"
-                    else f'<span class="flag-chip flag-amber">KYC: medium</span>'
-                    if kyc == "medium"
-                    else f'<span class="flag-chip flag-green">KYC: low</span>')
-        pep_chip = '<span class="flag-chip flag-red">PEP</span>' if pep else ""
-        sanc_chip = '<span class="flag-chip flag-red">Sanc</span>' if sanc else ""
+        # Compliance flags — only show medium/high KYC, PEP, sanctions
+        flags_html = ""
+        if kyc == "high":
+            flags_html += '<span class="flag-chip flag-red">Rating: high</span>'
+        elif kyc == "medium":
+            flags_html += '<span class="flag-chip flag-amber">Rating: medium</span>'
+        if pep:
+            flags_html += '<span class="flag-chip flag-red">PEP</span>'
+        if sanc:
+            flags_html += '<span class="flag-chip flag-red">Sanctions</span>'
+        if not flags_html:
+            flags_html = '<span style="color:#aaa;font-size:0.78rem">—</span>'
 
         c = st.columns(H)
-        if c[0].button(_STATUS_SYMBOL.get(status, status),
-                       key=f"d_{cid}", use_container_width=True):
-            open_investigation(cid)
-            st.rerun()
+        # Plain status badge — display only, not clickable
+        c[0].markdown(
+            f'<div style="padding:8px 4px">'
+            f'{_DECISION_BADGE.get(status, f"<span>{status}</span>")}</div>',
+            unsafe_allow_html=True,
+        )
         c[1].markdown(
             f'<div style="padding:6px 4px">'
             f'<div style="font-weight:600;color:#0d2137">{name}</div>'
@@ -1891,11 +2011,11 @@ def render_database_tab():
             unsafe_allow_html=True,
         )
         c[3].markdown(
-            f'<div style="padding:8px 4px">{kyc_chip}{pep_chip}{sanc_chip}</div>',
+            f'<div style="padding:8px 4px">{flags_html}</div>',
             unsafe_allow_html=True,
         )
         c[4].markdown(
-            f'<div style="padding:10px 4px">{type_badge(ctype)}</div>',
+            f'<div style="padding:10px 4px;font-size:0.82rem;color:#546e8a">{ctype}</div>',
             unsafe_allow_html=True,
         )
 
